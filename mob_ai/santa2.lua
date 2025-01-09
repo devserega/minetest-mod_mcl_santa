@@ -101,12 +101,74 @@ local function get_random_state()
 	return STATE_NONE
 end
 
-local function santa_stop()
+local function get_random_prize_name()
+	-- Определение вероятностей для призов
+	local prizes_probabilities = {
+		["mcl_core:coal_lump"] = 0.4,      -- 20% вероятность угля
+		["mcl_farming:wheat_item"] = 0.4,   -- 60% вероятность пшеницы
+		["mcl_raw_ores:raw_iron"] = 0.2,      -- 20% вероятность железного слитка
+	}
 
+	local rand = math.random()  -- Генерация случайного числа от 0 до 1
+	local cumulative_probability = 0
+
+	-- Проходим по всем призам и их вероятностям
+	for prize, probability in pairs(prizes_probabilities) do
+		cumulative_probability = cumulative_probability + probability
+		if rand <= cumulative_probability then
+			return prize
+		end
+	end
 end
 
-local function santa_drop()
+local function santa_stand(self)
+	--minetest.chat_send_all(S("STATE_STAND"))
 
+	--minetest.log("action", "serega: STATE_STAND")
+	self.object:set_velocity({x = 0, y = self.object:get_velocity().y, z = 0})
+	self.object:set_animation({x = self.animations.stand_START, y = self.animations.stand_END}, animation_speed, animation_blend)
+end
+
+local function santa_walk(self)
+	--minetest.chat_send_all(S("STATE_WALK"))
+	--minetest.log("action", "serega: STATE_WALK")
+
+	self.target_pos = choose_random_target(self.spawn_pos, roam_radius) -- Выбираем новую цель
+	local santa_pos = self.object:get_pos()
+	local vec = vector.subtract(self.target_pos, santa_pos)
+	local yaw = math.atan2(vec.z, vec.x)-math.pi/2
+	self.object:set_yaw(yaw)
+	
+	-- Если цель достигнута, переключиться в состояние "stand"
+	local distance = vector.length(vec)
+	if distance < 1 then
+		self.state = STATE_STAND
+		self.timer = 0 -- Сбрасываем основной таймер
+		self.target_pos = nil
+		return
+	end
+
+	local direction = vector.normalize(vec)
+	self.object:set_velocity({x = direction.x * chillaxin_speed, y = self.object:get_velocity().y, z = direction.z * chillaxin_speed})
+	self.object:set_animation({x = self.animations.walk_START, y = self.animations.walk_END}, animation_speed, animation_blend)
+end
+
+local function santa_drop(self)
+	--minetest.chat_send_all(S("STATE_DROP"))
+	local pos = self.object:get_pos()
+
+	-- Добавляем уголь в мир рядом с Santa
+	local prize_count = math.random(3, 7) -- Здесь задается количество приза
+	local prize_name = get_random_prize_name()
+	for i = 1, prize_count do
+		local prize_pos = {x = pos.x + math.random(-2, 2), y = pos.y, z = pos.z + math.random(-2, 2)}
+		minetest.add_item(prize_pos, prize_name)
+	end
+
+	-- Возвращаем Санту к состоянию "stand"
+	self.state = STATE_STAND
+	self.timer = 0 -- Сбрасываем основной таймер
+	self.target_pos = nil
 end
 
 -- Обработка шага SANTA
@@ -118,52 +180,14 @@ SANTA.on_step = function(self, dtime)
 		--minetest.log("action", "serega: set change_timer=" .. minetest.serialize(self.change_timer) .. " state=" .. minetest.serialize(self.state))
 
 		if self.state == STATE_STAND then
-			-- Если SANTA стоит
-			minetest.chat_send_all(S("STATE_STAND"))
-			--self.target_pos = nil -- Сбрасываем цель, если Santa стоит
-
-			--minetest.log("action", "serega: STATE_STAND")
-			self.object:set_velocity({x = 0, y = self.object:get_velocity().y, z = 0})
-			self.object:set_animation({x = self.animations.stand_START, y = self.animations.stand_END}, animation_speed, animation_blend)
+			-- SANTA стоит
+			santa_stand(self)
 		elseif self.state == STATE_WALK then
-			-- Если SANTA идёт
-			minetest.chat_send_all(S("STATE_WALK"))
-			minetest.log("action", "serega: STATE_WALK")
-
-			self.target_pos = choose_random_target(self.spawn_pos, roam_radius) -- Выбираем новую цель
-			local santa_pos = self.object:get_pos()
-			local vec = vector.subtract(self.target_pos, santa_pos)
-			local yaw = math.atan2(vec.z, vec.x)-math.pi/2
-			self.object:set_yaw(yaw)
-	
-			-- Если цель достигнута, переключиться в состояние "stand"
-			local distance = vector.length(vec)
-			if distance < 1 then
-				self.state = STATE_STAND
-				self.target_pos = nil
-				return
-			end
-
-			local direction = vector.normalize(vec)
-			self.object:set_velocity({x = direction.x * chillaxin_speed, y = self.object:get_velocity().y, z = direction.z * chillaxin_speed})
-			self.object:set_animation({x = self.animations.walk_START, y = self.animations.walk_END}, animation_speed, animation_blend)
+			-- SANTA идёт
+			santa_walk(self)
 		elseif self.state == STATE_DROP then
-			-- Выкидывание угля рядом с Santa
-			minetest.chat_send_all(S("STATE_DROP"))
-			local pos = self.object:get_pos()
-			local coal_pos = {x = pos.x + math.random(-2, 2), y = pos.y, z = pos.z + math.random(-2, 2)}
-
-			-- Количество угля, которое Santa выбросит
-			local coal_count = 5  -- Здесь задается количество угля
-
-			-- Добавляем уголь в мир рядом с Santa
-			for i = 1, coal_count do
-				minetest.add_item(coal_pos, "mcl_core:coal_lump")
-			end
-
-			-- Возвращаем Санту к состоянию "stand"
-			self.state = STATE_STAND
-			self.target_pos = nil
+			-- SANTA выкидывание приза
+			santa_drop(self)
 		end
 	end
 
@@ -189,16 +213,6 @@ SANTA.on_step = function(self, dtime)
 		--minetest.log("action", "serega: reset timer")
 	end
 end
-
---[[
-local vec = {x=PLAYER.x-NPC.x, y=PLAYER.y-NPC.y, z=PLAYER.z-NPC.z}
-local yaw = math.atan(vec.z/vec.x)--+math.pi^2
-if PLAYER.x > NPC.x then
-	yaw = yaw + math.pi
-end
-yaw = yaw - 8.3
-self.object:setyaw(yaw)
-]]
 
 SANTA.on_punch = function(self, puncher)
 	local is_player = puncher:is_player()
