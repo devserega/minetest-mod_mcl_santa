@@ -14,7 +14,7 @@ local default_model = "character.x"
 local santa_textures = {"santa.png"}
 
 -- Радиус движения от точки спавна
-local roam_radius = 10
+local roam_radius = 5
 
 local STATE_NONE = 0
 local STATE_STAND = 1
